@@ -1,153 +1,133 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 import os
-from datetime import datetime
 
-CSV_FILE = "expenses.csv"
-BUDGET_FILE = "budget.txt"
+CSV_FILE = "students.csv"
 
-# Load budget from file if exists
-def load_budget():
-    if os.path.exists(BUDGET_FILE):
-        with open(BUDGET_FILE, "r") as f:
-            try:
-                return float(f.read().strip())
-            except:
-                return 0
-    return 0
-
-def save_budget(budget):
-    with open(BUDGET_FILE, "w") as f:
-        f.write(str(budget))
-
-# Load expenses using Pandas
-def load_expenses():
-    if os.path.exists(CSV_FILE):
-        try:
-            df = pd.read_csv(CSV_FILE)
-            return df
-        except:
-            return pd.DataFrame(columns=["Date", "Category", "Amount"])
+def get_grade(percentage):
+    if percentage >= 90:
+        return "A"
+    elif percentage >= 75:
+        return "B"
+    elif percentage >= 60:
+        return "C"
+    elif percentage >= 40:
+        return "D"
     else:
-        return pd.DataFrame(columns=["Date", "Category", "Amount"])
+        return "F"
 
-def save_expense(date, category, amount):
-    df = load_expenses()
-    new_row = pd.DataFrame([{"Date": date, "Category": category, "Amount": amount}])
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(CSV_FILE, index=False)
+def load_data():
+    if not os.path.exists(CSV_FILE):
+        print("students.csv file not found!")
+        return None
 
-# 1. Set Budget
-def set_budget():
+    # Read without header - file is like: Aman,80,70,90
     try:
-        budget = float(input("Enter monthly budget: "))
-        if budget <= 0:
-            print("Invalid amount. Amount must be a positive number.")
-            return 0
-        save_budget(budget)
-        print(f"Monthly budget set: {int(budget) if budget.is_integer() else budget}")
-        return budget
-    except ValueError:
-        print("Invalid amount. Amount must be a positive number.")
-        return 0
+        df = pd.read_csv(CSV_FILE, header=None, names=["Name", "Maths", "Physics", "Chemistry"])
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return None
 
-# 2. Add Expense
-def add_expense(budget):
-    date_str = input("Enter date (YYYY-MM-DD): ")
-    # Validate date
-    try:
-        datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        print("Invalid date. Use YYYY-MM-DD.")
+    valid_rows = []
+    for index, row in df.iterrows():
+        name = row["Name"]
+        try:
+            maths = float(row["Maths"])
+            physics = float(row["Physics"])
+            chemistry = float(row["Chemistry"])
+        except ValueError:
+            # Find which subject is invalid
+            for subject in ["Maths", "Physics", "Chemistry"]:
+                try:
+                    float(row[subject])
+                except:
+                    print(f"Invalid marks for {name} in {subject}: '{row[subject]}'. Row skipped.")
+                    break
+            continue
+
+        # Check marks 0 to 100
+        if not (0 <= maths <= 100 and 0 <= physics <= 100 and 0 <= chemistry <= 100):
+            print(f"Invalid marks for {name}. Marks must be 0-100. Row skipped.")
+            continue
+
+        total = maths + physics + chemistry
+        percentage = total / 300 * 100
+        grade = get_grade(percentage)
+        valid_rows.append([name, maths, physics, chemistry, total, percentage, grade])
+
+    if not valid_rows:
+        print("No valid data found.")
+        return None
+
+    result_df = pd.DataFrame(valid_rows, columns=["Name", "Maths", "Physics", "Chemistry", "Total", "Percentage", "Grade"])
+    return result_df
+
+# Option 1: Result
+def show_result():
+    df = load_data()
+    if df is None:
+        return
+    print("\n--- Student Result ---")
+    for _, row in df.iterrows():
+        print(f"{row['Name']} | {int(row['Total'])} | {row['Percentage']:.2f}% | {row['Grade']}")
+
+# Option 2: Statistics + Charts
+def show_statistics():
+    df = load_data()
+    if df is None:
         return
 
-    category = input("Enter category (Food/Travel/etc): ")
+    percentages = df["Percentage"].values
+    mean_val = np.mean(percentages)
+    median_val = np.median(percentages)
+    std_val = np.std(percentages)
 
-    try:
-        amount = float(input("Enter amount: "))
-    except ValueError:
-        print("Invalid amount. Amount must be a positive number.")
-        return
+    print(f"\nMean %: {mean_val:.2f} | Median %: {median_val:.2f} | Std Dev: {std_val:.2f}")
 
-    if amount <= 0:
-        print("Invalid amount. Amount must be a positive number.")
-        return
+    # Topper
+    topper_row = df.loc[df["Percentage"].idxmax()]
+    print(f"Topper: {topper_row['Name']} ({topper_row['Percentage']:.2f}%)")
 
-    save_expense(date_str, category, amount)
-    print("Expense saved.")
+    # Subject averages using Pandas
+    maths_avg = df["Maths"].mean()
+    physics_avg = df["Physics"].mean()
+    chemistry_avg = df["Chemistry"].mean()
+    print(f"Subject averages: Maths {maths_avg:.2f}, Physics {physics_avg:.2f}, Chemistry {chemistry_avg:.2f}")
 
-    # Show total and remaining after adding
-    df = load_expenses()
-    total = df["Amount"].sum()
-    remaining = budget - total
-    if budget > 0:
-        percent = (total / budget) * 100
-        print(f"Total spent: {int(total) if total == int(total) else total} | Remaining: {int(remaining) if remaining == int(remaining) else remaining}")
-        if percent >= 100:
-            print(f"Budget fully used ({percent:.2f}%).")
-            print("Budget exceeded!")
-        elif percent >= 80:
-            print(f"Warning: {percent:.2f}% of the budget used.")
+    # Bar Chart - Total Marks
+    plt.figure(figsize=(8, 5))
+    plt.bar(df["Name"], df["Total"], color="skyblue")
+    plt.title("Student Total Marks")
+    plt.xlabel("Student Name")
+    plt.ylabel("Total Marks (out of 300)")
+    plt.ylim(0, 300)
+    plt.show()
 
-# 3. Category Summary using groupby()
-def category_summary():
-    df = load_expenses()
-    if df.empty:
-        print("No expenses found.")
-        return
-    print("\n--- Category-wise Summary ---")
-    summary = df.groupby("Category")["Amount"].sum()
-    for cat, amt in summary.items():
-        print(f"{cat}: {int(amt) if amt == int(amt) else amt}")
+    # Histogram - Percentage Distribution
+    plt.figure(figsize=(8, 5))
+    plt.hist(df["Percentage"], bins=5, color="lightgreen", edgecolor="black")
+    plt.title("Percentage Distribution")
+    plt.xlabel("Percentage (%)")
+    plt.ylabel("Number of Students")
+    plt.show()
 
-# 4. Report
-def report(budget):
-    df = load_expenses()
-    if df.empty:
-        print("No expenses found.")
-        return
-    print("\n--- Report ---")
-    summary = df.groupby("Category")["Amount"].sum()
-    for cat, amt in summary.items():
-        print(f"{cat}: {int(amt) if amt == int(amt) else amt}")
-
-    total = df["Amount"].sum()
-    remaining = budget - total
-    print(f"Total spent: {int(total) if total == int(total) else total} | Remaining: {int(remaining) if remaining == int(remaining) else remaining}")
-
-    if budget > 0:
-        percent = (total / budget) * 100
-        if percent >= 100:
-            print(f"Budget fully used ({percent:.2f}%).")
-            print("Budget exceeded!")
-        elif percent >= 80:
-            print(f"Warning: {percent:.2f}% of the budget used.")
-        else:
-            print(f"Budget used: {percent:.2f}%")
+    print("Bar chart displayed")
 
 # Main Menu
 def main():
-    budget = load_budget()
     while True:
-        print("\n--- Personal Expense & Budget Manager ---")
-        print("1. Set Budget")
-        print("2. Add Expense")
-        print("3. Category Summary")
-        print("4. Report")
-        print("5. Exit")
+        print("\n--- Student Performance Analyzer ---")
+        print("1. Result")
+        print("2. Statistics")
+        print("3. Exit")
         choice = input("Enter choice: ")
 
         if choice == "1":
-            budget = set_budget()
+            show_result()
         elif choice == "2":
-            if budget == 0:
-                print("Please set budget first (Option 1).")
-            else:
-                add_expense(budget)
+            show_statistics()
         elif choice == "3":
-            category_summary()
-        elif choice == "4":
-            report(budget)
-        elif choice == "5":
             print("Thank you! Goodbye.")
             break
         else:
